@@ -1,6 +1,12 @@
-# v0.2.0
+# v0.2.1
 
-Adds four safeguards for student and professional migrations, preserving the agreed folder design.
+Includes all v0.2.0 safeguards, plus final compatibility and recovery fixes:
+
+- Detects Windows junctions using APIs available in Python 3.10 and 3.11; scans stay inside approved folders.
+- Reconciles partial migrations completed under a new bundle ID while preserving exact verification provenance and content fingerprints.
+- Reports unsafe or changed recovery trees as blocked without losing the rest of the session report.
+
+The agreed folder design remains unchanged.
 
 - Checks supported local references within explicitly approved folders; holds moves that would break them and records manual review of unsupported or external dependencies.
 - Requires a saved preview, binding the manifest, inspected references and complete source inventories to the approved plan. Changes invalidate that preview.

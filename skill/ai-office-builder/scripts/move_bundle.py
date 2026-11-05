@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import sys
+from path_safety import linked
 from safe_move import move
 from safeguards import snapshot, inventory, verify_move, verify_references, write_new, reconcile
 
@@ -33,10 +34,6 @@ def same_content(a, b):
 def identity(p):
     s = p.stat()
     return [s.st_dev, s.st_ino]
-
-
-def linked(p):
-    return any(x.is_symlink() or (hasattr(x, 'is_junction') and x.is_junction()) for x in (p, *p.parents))
 
 
 def inside(p, parent):

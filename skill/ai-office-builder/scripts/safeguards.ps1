@@ -205,26 +205,44 @@ function ReconcileSession([string]$Cowork,$State) {
             }
         }
     }
+    $records=New-Object 'System.Collections.Generic.List[object]'
     if (Test-Path -LiteralPath $folder) {
         foreach ($path in (Get-ChildItem -LiteralPath $folder -Filter 'undo_*.json')) {
             if (Linked $path.FullName) {throw 'linked_metadata'}
             try {
                 $u=Get-Content -Encoding UTF8 -LiteralPath $path.FullName -Raw | ConvertFrom-Json -ErrorAction Stop
-                if ($u.bundle -isnot [string] -or $u.moves -isnot [array] -or !$u.moves.Count) {throw 'Malformed recovery record'}
-            } catch {$bundles.Add(@{bundle=$path.BaseName;moved=0;original=0;blocked=1});continue}
-            $counts=@{bundle=$u.bundle;moved=0;original=0;blocked=0}
-            if ($u.cowork -isnot [string] -or (FullPath $u.cowork) -ne $Cowork) {$counts.blocked=$u.moves.Count;$bundles.Add($counts);continue}
-            foreach ($row in $u.moves) {
-                $status='blocked'
+                if ($u.bundle -isnot [string] -or $u.bundle -notmatch '^[A-Za-z0-9_-]+$' -or $u.moves -isnot [array] -or !$u.moves.Count) {throw 'Malformed recovery record'}
+                $records.Add($u)
+            } catch {$bundles.Add(@{bundle=$path.BaseName;moved=0;original=0;blocked=1})}
+        }
+    }
+    $proofs=@{}
+    foreach ($record in $records) {
+        if ($record.cowork -isnot [string] -or (FullPath $record.cowork) -ne $Cowork) {continue}
+        foreach ($row in $record.moves) {
+            if ((RecoveryRowAllowed $row $Cowork $State) -and @($verified | Where-Object {$_.bundle -ceq $record.bundle -and $_.src -ceq $row.dst -and $_.dst -ceq $row.src}).Count) {
+                $key=Canonical @{src=$row.dst;dst=$row.src;fingerprint=$row.fingerprint}
+                if (!$proofs.ContainsKey($key)) {$proofs[$key]=@()}
+                $proofs[$key]+=$record.bundle
+            }
+        }
+    }
+    foreach ($u in $records) {
+        $counts=@{bundle=$u.bundle;moved=0;original=0;blocked=0;verified_by=@();issues=@()}
+        if ($u.cowork -isnot [string] -or (FullPath $u.cowork) -ne $Cowork) {$counts.blocked=$u.moves.Count;$bundles.Add($counts);continue}
+        foreach ($row in $u.moves) {
+            $status='blocked'
+            try {
                 if ((RecoveryRowAllowed $row $Cowork $State) -and !(Linked $row.src) -and !(Linked $row.dst)) {
                     if ((Test-Path -LiteralPath $row.src) -and !(Test-Path -LiteralPath $row.dst) -and (Canonical (TreeFingerprint $row.src)) -ceq (Canonical $row.fingerprint)) {
-                        if (@($verified | Where-Object {$_.bundle -ceq $u.bundle -and $_.src -ceq $row.dst -and $_.dst -ceq $row.src}).Count) {$status='moved'}
+                        $key=Canonical @{src=$row.dst;dst=$row.src;fingerprint=$row.fingerprint}
+                        if ($proofs.ContainsKey($key)) {$status='moved';$counts.verified_by=@($counts.verified_by+$proofs[$key] | Select-Object -Unique)}
                     } elseif ((Test-Path -LiteralPath $row.dst) -and !(Test-Path -LiteralPath $row.src) -and (Canonical (TreeFingerprint $row.dst)) -ceq (Canonical $row.fingerprint)) {$status='original'}
                 }
-                $counts[$status]++
-            }
-            $bundles.Add($counts)
+            } catch {$counts.issues+=([string]$_)}
+            $counts[$status]++
         }
+        $bundles.Add($counts)
     }
     $finished=@($bundles | Where-Object {$_.moved -and !$_.original -and !$_.blocked} | ForEach-Object {$_.bundle})
     $pending=@($State.pending_bundles | Where-Object {$_ -notin $finished})

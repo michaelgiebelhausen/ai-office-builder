@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+from path_safety import linked
 from urllib.parse import unquote
 
 TEXT = {'.md', '.markdown', '.txt', '.html', '.htm', '.json', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.ps1', '.py', '.sh'}
@@ -21,10 +22,6 @@ def digest(p):
         for chunk in iter(lambda: f.read(1048576), b''):
             h.update(chunk)
     return h.hexdigest()
-
-
-def linked(p):
-    return any(q.is_symlink() or (hasattr(q, 'is_junction') and q.is_junction()) for q in (p, *p.parents))
 
 
 def inventory(p):
@@ -275,7 +272,7 @@ def recovery_row_allowed(row, cowork, state):
         p = Path(item['path'])
         if p.is_absolute() or '..' in p.parts or item.get('kind') not in ('file', 'dir'):
             return False
-        if item['kind'] == 'file' and not re.fullmatch('[0-9a-fA-F]{64}', item.get('sha256', '')):
+        if item['kind'] == 'file' and (not isinstance(item.get('sha256'), str) or not re.fullmatch('[0-9a-fA-F]{64}', item['sha256'])):
             return False
     return True
 
@@ -297,32 +294,51 @@ def reconcile(cowork, state):
                 verified.add((event['bundle'], event['src'], event['dst']))
             except (ValueError, KeyError, TypeError):
                 pass
+    records = []
     for path in sorted(folder.glob('undo_*.json')):
         if linked(path):
             raise ValueError('linked_metadata')
         try:
             u = json.loads(path.read_text(encoding='utf-8-sig'))
-            if not isinstance(u, dict) or not isinstance(u.get('bundle'), str) or not isinstance(u.get('moves'), list) or not u['moves']:
+            if not isinstance(u, dict) or not isinstance(u.get('bundle'), str) or not re.fullmatch(r'[A-Za-z0-9_-]+', u['bundle']) or not isinstance(u.get('moves'), list) or not u['moves']:
                 raise ValueError('Malformed recovery record')
-            bundle, rows = u['bundle'], u['moves']
-        except (ValueError, TypeError):
+            records.append(u)
+        except (ValueError, TypeError, OSError):
             result['bundles'].append({'bundle': path.stem, 'moved': 0, 'original': 0, 'blocked': 1})
+    def same_office(record):
+        return isinstance(record.get('cowork'), str) and Path(os.path.abspath(record['cowork'])) == Path(os.path.abspath(cowork))
+    def proof_key(row):
+        return (row['dst'], row['src'], json.dumps(row['fingerprint'], sort_keys=True))
+    proofs = {}
+    for record in records:
+        if not same_office(record):
             continue
-        counts = {'bundle': bundle, 'moved': 0, 'original': 0, 'blocked': 0}
-        if not isinstance(u.get('cowork'), str) or Path(os.path.abspath(u['cowork'])) != Path(os.path.abspath(cowork)):
+        for row in record['moves']:
+            if recovery_row_allowed(row, cowork, state) and (record['bundle'], row['dst'], row['src']) in verified:
+                proofs.setdefault(proof_key(row), []).append(record['bundle'])
+    for u in records:
+        bundle, rows = u['bundle'], u['moves']
+        counts = {'bundle': bundle, 'moved': 0, 'original': 0, 'blocked': 0, 'verified_by': [], 'issues': []}
+        if not same_office(u):
             counts['blocked'] = len(rows)
         else:
             for row in rows:
                 status = 'blocked'
-                if recovery_row_allowed(row, cowork, state):
-                    current, original = Path(row['src']), Path(row['dst'])
-                    # Authorize lexical paths before checking links, existence or contents.
-                    if not linked(current) and not linked(original):
-                        expected = row['fingerprint']
-                        if current.exists() and not original.exists() and inventory(current) == expected:
-                            status = 'moved' if (bundle, str(original), str(current)) in verified else 'blocked'
-                        elif original.exists() and not current.exists() and inventory(original) == expected:
-                            status = 'original'
+                try:
+                    if recovery_row_allowed(row, cowork, state):
+                        current, original = Path(row['src']), Path(row['dst'])
+                        # Authorize lexical paths before inspecting links or contents.
+                        if not linked(current) and not linked(original):
+                            expected = row['fingerprint']
+                            if current.exists() and not original.exists() and inventory(current) == expected:
+                                via = proofs.get(proof_key(row), [])
+                                if via:
+                                    status = 'moved'
+                                    counts['verified_by'] = list(dict.fromkeys(counts['verified_by'] + via))
+                            elif original.exists() and not current.exists() and inventory(original) == expected:
+                                status = 'original'
+                except (OSError, ValueError, TypeError) as error:
+                    counts['issues'].append(str(error))
                 counts[status] += 1
         result['bundles'].append(counts)
     finished = {x['bundle'] for x in result['bundles'] if x['moved'] and not x['original'] and not x['blocked']}

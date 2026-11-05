@@ -7,6 +7,8 @@ Usage:
 Structure findings are failures. Naming findings are suggestions.
 """
 import argparse, json, os, re, sys
+from pathlib import Path
+from path_safety import linked
 
 NUM = re.compile(r"^(\d{2})_(.+)$")
 STAGES = ["01_brief", "02_spec", "03_build", "04_output"]
@@ -45,7 +47,7 @@ def main():
     F = lambda m: fail.append(m)
     W = lambda m: warn.append(m)
 
-    if not os.path.isdir(root):
+    if linked(Path(root)) or not os.path.isdir(root):
         print(f"Not a folder: {root}")
         return 2
 
@@ -158,7 +160,7 @@ def main():
                 finals.append(os.path.join(rel, fn))
         for name in list(dirnames) + filenames:
             path = os.path.join(dirpath, name)
-            if os.path.islink(path) or (hasattr(os.path, "isjunction") and os.path.isjunction(path)):
+            if linked(Path(path)):
                 F(f"Linked path requires review: {path}")
                 if name in dirnames:
                     dirnames.remove(name)

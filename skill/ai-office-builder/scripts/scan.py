@@ -17,6 +17,8 @@ Output JSON:
 """
 import argparse, hashlib, json, os, re, sys
 from collections import Counter, defaultdict
+from pathlib import Path
+from path_safety import linked
 
 SKIP_DIRS = {"node_modules", "__pycache__", ".venv", "venv", "AppData", "Library",
              "Application Data", "$RECYCLE.BIN", "System Volume Information",
@@ -65,7 +67,7 @@ def main():
         if n >= a.max_files:
             break
         root = os.path.abspath(os.path.expanduser(root))
-        if not os.path.isdir(root):
+        if linked(root) or not os.path.isdir(root):
             roots_info[root] = {"error": "not a folder or not accessible"}
             continue
         rc, rs = 0, 0
@@ -75,10 +77,10 @@ def main():
                 git_repos.append(dirpath)
                 dirnames[:] = []
                 continue
-            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".") and not os.path.islink(os.path.join(dirpath, d)) and not (hasattr(os.path, "isjunction") and os.path.isjunction(os.path.join(dirpath, d)))]
+            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".") and not linked(Path(dirpath) / d)]
             depth = dirpath.rstrip(os.sep).count(os.sep) - base_depth
             for fn in filenames:
-                if os.path.islink(os.path.join(dirpath, fn)) or fn.startswith(".") or fn.lower() in ("desktop.ini", "thumbs.db"):
+                if linked(Path(dirpath) / fn) or fn.startswith(".") or fn.lower() in ("desktop.ini", "thumbs.db"):
                     continue
                 p = os.path.join(dirpath, fn)
                 try:
