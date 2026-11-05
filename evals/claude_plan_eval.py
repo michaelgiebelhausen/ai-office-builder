@@ -57,7 +57,8 @@ def evaluate(scenario,out):
         if scenario.get('resume'):
             tree(home,scenario['mode'])
             old=put(home/'Desktop/earlier.txt','Already moved; do not repeat')
-            m=put(home/'earlier.json',json.dumps({'bundle':'01_completed','moves':[{'src':str(old),'dst':'21_Acme/Resources/earlier.txt'}]}))
+            m=put(home/'earlier.json',json.dumps({'bundle':'01_completed','reference_roots':[str(home/'Desktop')],'dependency_review':'Synthetic scenario: no external consumers','moves':[{'src':str(old),'dst':'21_Acme/Resources/earlier.txt'}]}))
+            script('move_bundle.py',m,'--cowork',root,'--dry-run')
             script('move_bundle.py',m,'--cowork',root)
             prior=(root/'00_Inbox/_migration/migration_log.md').read_text()
         inventory=home/'scan.json'
@@ -92,7 +93,7 @@ def evaluate(scenario,out):
             else:
                 d=safe(root,row['dst'])
             rows.append({'src':str(s),'dst':str(d)})
-        manifest=put(home/'approved.json',json.dumps({'bundle':'02_model_approved','moves':rows}))
+        manifest=put(home/'approved.json',json.dumps({'bundle':'02_model_approved','reference_roots':[str(home/'Desktop'),str(home/'Documents')],'dependency_review':'Synthetic scenario: no external consumers; application formats reviewed','moves':rows}))
         script('move_bundle.py',manifest,'--cowork',root,'--dry-run')
         script('move_bundle.py',manifest,'--cowork',root)
         audit=home/'audit.json'

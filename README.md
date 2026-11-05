@@ -15,7 +15,7 @@ class workspaces, and a second-brain Library. Your code lives separately in `~/C
 
 Allow **60–90 minutes**. Claude interviews you, scans without moving anything,
 proposes a floor plan, then asks you to approve each move bundle. You can stop
-and resume from the log. Each bundle has an undo file; occupied destinations are
+and resume from the log. Each bundle has a saved preview and an undo file. Changed files invalidate the preview; destination contents are verified after moving. Session snapshots preserve your choices when resuming. Supported local links are checked, and uncertain app dependencies need your review. Occupied destinations are
 never overwritten. Exact duplicates move to a review folder. Renaming is optional.
 
 ```text

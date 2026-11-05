@@ -18,6 +18,7 @@ Expect a 60–90 minute session. Offer natural stopping points after the skeleto
 - `references/naming.md` — rename rules, collision handling, the confidence bar. Read before Phase 6.
 - `scripts/scan.py` — read-only inventory of chosen folders → JSON summary.
 - `scripts/move_bundle.py` — executes one approved bundle: collision checks, moves, log, undo file.
+- `references/migration_safety.md` — dependency scope, saved previews, verification and session recovery. Read before preparing bundles.
 - `scripts/audit.py` — checks a Cowork folder against the checklist.
 
 Use Python 3.10+ when available (`python3 --version`, `python --version`, or
@@ -59,7 +60,7 @@ then undo or prepare only unfinished items under a new approved bundle ID.
 
 1. Detect the OS and which folders you can actually read and write. If you can't reach the user's Desktop, Documents, or OneDrive, tell them exactly which folders to grant access to before anything else.
 2. Find their OneDrive folder (often `OneDrive - <Organization>`). The new office goes at `<OneDrive>/Cowork/` because OneDrive backs it up automatically. If OneDrive is absent, explain that the agreed location is unavailable and ask before choosing another location.
-3. If `Cowork/00_Inbox/_migration/migration_log.md` already exists, this is a resume: read the log, summarize what's done, and continue from the next unfinished phase or bundle. If they only want a check-up, jump to Phase 8.
+3. If `Cowork/00_Inbox/_migration/migration_log.md` already exists, this is a resume: read `references/migration_safety.md`, run `move_bundle.py --cowork <Cowork path> --resume`, read the log, and reconcile actual bundle states before continuing. A blocked or legacy result needs inspection; never assume a partially moved bundle finished. If they only want a check-up, jump to Phase 8.
 
 ## Phase 1 — Interview
 
@@ -70,7 +71,8 @@ Ask conversationally, a few at a time, not as a form:
 3. Who do you do work *for*? Employers, clients, businesses you run. Students: any job or side hustle — those work like clients; skip if none.
 4. Professionals only: what personal things need coordinating with work? (health, travel, house…) Students skip this — as a full-time student most of life is one bucket, so personal bots live alongside school bots in the 10s.
 5. How much renaming do you want? **None** (keep every name) / **Fix the worst** (spaces, "final_final", clashes) / **Full cleanup** (apply the naming rules where confident).
-6. Which places should I look through? Offer what you detected: Desktop, Documents, OneDrive, Google Drive, Dropbox. Downloads is opt-in and handled last. Never scan system or app folders or `Pictures/` (photo libraries break when moved).
+6. Do any apps, shortcuts, scripts, scheduled jobs, shared links or other people depend on files staying at their current paths? Record the answer and any extra approved reference roots.
+7. Which places should I look through? Offer what you detected: Desktop, Documents, OneDrive, Google Drive, Dropbox. Downloads is opt-in and handled last. Never scan system or app folders or `Pictures/` (photo libraries break when moved).
 
 ## Phase 2 — The Code folder
 
@@ -105,7 +107,7 @@ Show the finished tree. This is a good stopping point.
 
 ## Phase 6 — Migrate in bundles
 
-Read `references/naming.md`. Group files into bundles **by destination** ("→ 21_Acme", "→ 10_Class/MKT_4310"), worked in this order:
+Read `references/naming.md` and `references/migration_safety.md`. Save the interview choices, approved reference_roots and destination_roots (Cowork and Code), floor plan and pending bundle IDs with `move_bundle.py --cowork <Cowork path> --save-session choices.json`. Update these with a new snapshot at stopping points. Group files into bundles **by destination** ("→ 21_Acme", "→ 10_Class/MKT_4310"), worked in this order:
 
 1. Code repos → `~/Code` (Phase 2).
 2. High-confidence clusters (an obvious course folder, a client folder, a pile of invoices).
@@ -118,10 +120,10 @@ Where client work goes: client projects live in that client's 20s folder (`Proje
 
 For each bundle:
 
-1. Write a manifest JSON (format in `scripts/move_bundle.py`), applying renames only at the level the user chose.
-2. Run `python scripts/move_bundle.py <manifest> --cowork <Cowork path> --dry-run`. Fix every clash it reports before going further.
-3. Show the user the table (old → new, renames side by side). Over ~50 files, show a summary plus a sample. They can approve all, edit lines, skip files, or skip the bundle.
-4. Run without `--dry-run`. It logs every move and writes `undo_<bundle>.json`.
+1. Write a manifest JSON with the approved `reference_roots` and the owner's `dependency_review` response (format in `references/migration_safety.md`), applying renames only at the chosen level. Keep related files together when needed to preserve links. Hold moves that would break supported references; never rewrite raw files to bypass a hold.
+2. Run `python scripts/move_bundle.py <manifest> --cowork <Cowork path> --dry-run`. Fix every clash or dependency break before going further. A successful dry run saves `manifest.json.preview.json`; inspect its dependency results and coverage limits.
+3. Show the user the table (old → new, renames side by side), dependency findings and uninspected formats. Explain that external consumers outside approved roots are not certified. Over ~50 files, show a summary plus a sample. They can approve all, edit lines, skip files, or skip the bundle.
+4. Run without `--dry-run` only after approval. It requires the saved preview, rejects changed files/manifests/referrers, logs every move, verifies destination hashes, and preserves `undo_<bundle>.json`. A failure stops later moves. A changed preview needs a new `--approval` path and renewed approval. Start with one small representative pilot bundle and have the user confirm its files still work before larger bundles.
 5. Warn before moving large media folders from a non-synced location into OneDrive — that starts a big upload.
 
 If the user wants a bundle reversed: `python scripts/move_bundle.py --undo <undo file>`.
@@ -137,7 +139,7 @@ Run `python scripts/audit.py <Cowork path> --mode professional|student --code ~/
 Write `00_Inbox/_migration/migration_report.md` and tell the user in a few lines:
 
 - What was built (the tree, at two levels).
-- How many files moved, how many renamed, what remains in old locations.
+- How many files moved and verified, how many renamed, what remains in old locations. Report structural audit results separately from content verification and bounded dependency coverage.
 - Anything flagged: duplicates to review, dates guessed from file timestamps.
 - The next 2–3 steps: give each agent access to its wiki folder, set up the weekly raw → wiki pass, review `_duplicates/`.
 

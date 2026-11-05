@@ -1,10 +1,15 @@
 $ErrorActionPreference = 'Stop'
+# Keep piped JSON readable on Windows PowerShell 5.1 regardless of code page.
+[Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
 function FullPath([string]$Path) {
     if ($Path -eq '~') { return $env:USERPROFILE }
     if ($Path.StartsWith('~/') -or $Path.StartsWith('~\')) { $Path = Join-Path $env:USERPROFILE $Path.Substring(2) }
-    return [IO.Path]::GetFullPath($Path)
+    $full=[IO.Path]::GetFullPath($Path)
+    if ($full.Length -gt [IO.Path]::GetPathRoot($full).Length) {$full=$full.TrimEnd('\','/')}
+    return $full
 }
 function Within([string]$Path, [string]$Parent) {
+    $Path=$Path.TrimEnd('\','/');$Parent=$Parent.TrimEnd('\','/')
     return $Path.Equals($Parent, [StringComparison]::OrdinalIgnoreCase) -or $Path.StartsWith($Parent.TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)
 }
 function Linked([string]$Path) {

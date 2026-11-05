@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import sys
 from safe_move import move
+from safeguards import snapshot, inventory, verify_move, verify_references, write_new, reconcile
 
 
 def sha(p):
@@ -65,10 +66,14 @@ def check(m, cowork):
                 problems.append(('destination_escape', i))
         s, d = Path(os.path.abspath(s)), Path(os.path.abspath(d))
         row['_src'], row['_dst'] = str(s), str(d)
-        if not s.exists():
-            problems.append(('missing_source', i))
+        if any(part.casefold() in ('99_private', '.obsidian') for part in (*s.parts, *d.parts)):
+            problems.append(('private_path_in_bundle', i))
+            continue
         if linked(s) or linked(d):
             problems.append(('linked_path', i))
+            continue
+        if not s.exists():
+            problems.append(('missing_source', i))
         if d.exists():
             problems.append(('duplicate' if s.exists() and same_content(s, d) else 'clash', i))
         if inside(d, s) or inside(s, d):
@@ -82,6 +87,10 @@ def check(m, cowork):
             max_depth = 5 if s.is_dir() else 6
             if s.is_dir():
                 for base, dirs, files in os.walk(s):
+                    held_dirs = [n for n in dirs if linked(Path(base) / n)]
+                    if held_dirs:
+                        problems.append(('linked_path', i))
+                        dirs[:] = [n for n in dirs if n not in held_dirs]
                     if linked(Path(base)) or any(linked(Path(base) / n) for n in dirs + files):
                         problems.append(('linked_path', i))
                     relative = len(Path(base).relative_to(s).parts)
@@ -121,21 +130,33 @@ def run(m, cowork):
     undo = folder / ('undo_' + m['bundle'] + '.json')
     log = folder / 'migration_log.md'
     plan = {'bundle': m['bundle'], 'cowork': str(cowork), 'moves': [
-        {'src': r['_dst'], 'dst': r['_src'], 'identity': identity(Path(r['_src']))}
+        {'src': r['_dst'], 'dst': r['_src'], 'identity': identity(Path(r['_src'])), 'fingerprint': (r.get('_fingerprint') or inventory(r['_src']))}
         for r in reversed(m['moves'])]}
     with undo.open('x', encoding='utf-8') as f:
         json.dump(plan, f, indent=2)
         f.flush()
         os.fsync(f.fileno())
     append(log, f"\n## {datetime.datetime.now().isoformat()} bundle {m['bundle']}\n{m.get('description', '')}\nUndo: {undo}")
+    if m.get('_approval_path'):
+        append(log, 'Approved preview: ' + m['_approval_path'])
     done = 0
+    completed = []
+    fingerprints = {r['src']: r['fingerprint'] for r in plan['moves']}
     for row in m['moves']:
         s, d = Path(row['_src']), Path(row['_dst'])
+        expected = fingerprints[str(d)]
+        if inventory(s) != expected or linked(d):
+            raise ValueError('approval_changed: source or destination parent changed during execution')
         append(log, f'INTENT `{s}` -> `{d}`')
         d.parent.mkdir(parents=True, exist_ok=True)
         move(str(s), str(d))
         done += 1
         append(log, f'MOVED `{s}` -> `{d}` {row.get("note", "")}')
+        expected = fingerprints[str(d)]
+        verify_move(row, expected)
+        completed.append(row)
+        verify_references(m.get('_dependencies', {}), completed)
+        append(log, 'VERIFIED ' + json.dumps({'bundle': m['bundle'], 'src': str(s), 'dst': str(d)}))
     print(f'Moved {done} item(s). Logged. Undo file: {undo}')
     return 0
 
@@ -150,6 +171,10 @@ def undo_bundle(path, dry_run=False):
             continue
         if not s.exists() or d.exists() or linked(s) or linked(d) or identity(s) != row['identity']:
             print(f'skip (missing, changed, linked or occupied): {s} -> {d}')
+            skipped += 1
+            continue
+        if row.get('fingerprint') is not None and inventory(s) != row['fingerprint']:
+            print(f'skip (changed contents): {s}')
             skipped += 1
             continue
         print(f'UNDO {s} -> {d}')
@@ -171,8 +196,46 @@ def main():
     ap.add_argument('--cowork')
     ap.add_argument('--dry-run', action='store_true')
     ap.add_argument('--undo')
+    ap.add_argument('--approval', help='Saved preview path; defaults to MANIFEST.preview.json')
+    ap.add_argument('--save-session', help='JSON containing interview choices and pending_bundles')
+    ap.add_argument('--resume', action='store_true')
     a = ap.parse_args()
     try:
+        if sum(map(bool, (a.undo, a.save_session, a.resume))) > 1:
+            raise ValueError('Choose one of undo, save-session or resume')
+        if a.save_session or a.resume:
+            if not a.cowork:
+                ap.error('--cowork is required for session operations')
+            cowork = Path(os.path.abspath(Path(a.cowork).expanduser()))
+            folder = cowork / '00_Inbox/_migration'
+            if a.save_session:
+                state = json.loads(Path(a.save_session).read_text(encoding='utf-8-sig'))
+                if state.get('mode') not in ('student', 'professional') or state.get('renaming') not in ('none', 'fix the worst', 'full'):
+                    raise ValueError('session requires mode and renaming choices')
+                if not isinstance(state.get('pending_bundles', []), list):
+                    raise ValueError('pending_bundles must be a list')
+                if linked(folder):
+                    raise ValueError('linked_metadata')
+                if a.dry_run:
+                    print('Dry run: would save a new session snapshot; nothing written.')
+                    return 0
+                folder.mkdir(parents=True, exist_ok=True)
+                import uuid
+                target = folder / ('session_' + datetime.datetime.now().strftime('%Y%m%d%H%M%S%f') + '_' + uuid.uuid4().hex + '.json')
+                write_new(target, state)
+                print('Session saved: ' + str(target))
+                return 0
+            if linked(folder):
+                raise ValueError('linked_metadata')
+            sessions = sorted(folder.glob('session_*.json'))
+            if not sessions:
+                raise ValueError('No saved session; inspect existing logs rather than inventing choices')
+            if linked(sessions[-1]):
+                raise ValueError('linked_metadata')
+            state = json.loads(sessions[-1].read_text(encoding='utf-8-sig'))
+            result = reconcile(cowork, state)
+            print(json.dumps(result, indent=2))
+            return 1 if result['blocked'] else 0
         if a.undo:
             return undo_bundle(a.undo, a.dry_run)
         if not a.manifest or not a.cowork:
@@ -182,7 +245,29 @@ def main():
         problems = check(m, cowork)
         for kind, i in problems:
             print(f'[{kind}] move #{i + 1}')
+        if not problems:
+            approval = Path(os.path.abspath(a.approval or (a.manifest + '.preview.json')))
+            manifest_path = Path(os.path.abspath(a.manifest))
+            if any(inside(approval, Path(r['_src'])) or inside(manifest_path, Path(r['_src'])) for r in m['moves']):
+                raise ValueError('metadata_inside_source')
+            current = snapshot(m, cowork, [approval, manifest_path])
+            if linked(approval):
+                raise ValueError('linked_metadata')
+            if approval.exists():
+                approved = json.loads(approval.read_text(encoding='utf-8-sig'))
+                if current != approved:
+                    raise ValueError('approval_changed: files, references or manifest changed; prepare a new preview for approval')
+            elif a.dry_run:
+                write_new(approval, current)
+            else:
+                raise ValueError('approval_required: dry-run and approve the saved preview first')
+            m['_approval_path'] = str(approval)
+            m['_dependencies'] = current['dependencies']
+            for row, fingerprint in zip(m['moves'], current['sources']):
+                row['_fingerprint'] = fingerprint
         if a.dry_run:
+            if not problems:
+                print(f"Preview: {approval}; {len(current['dependencies']['files'])} text files inspected; {len(current['dependencies']['uninspected'])} uninspected items. External consumers are not certified.")
             print(f"Dry run: {len(m['moves'])} move(s) planned for bundle {m['bundle']}.")
             for row in m['moves'][:50]:
                 print(f"{row['_src']} -> {row['_dst']}")

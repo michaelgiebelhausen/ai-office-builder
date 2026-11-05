@@ -11,7 +11,7 @@ try {
     if (!(Test-Path -LiteralPath $root -PathType Container)) {$fail.Add("Not a folder: $root")}
     else {
         Need $root 'start_here.md'; Need $root '.claude/CLAUDE.md'
-        $route=''; if (Test-Path -LiteralPath (Join-Path $root '.claude/CLAUDE.md') -PathType Leaf) {$route=Get-Content -Raw -LiteralPath (Join-Path $root '.claude/CLAUDE.md')}
+        $route=''; if (Test-Path -LiteralPath (Join-Path $root '.claude/CLAUDE.md') -PathType Leaf) {$route=Get-Content -Encoding UTF8 -Raw -LiteralPath (Join-Path $root '.claude/CLAUDE.md')}
         foreach ($sub in @('00_Inbox','00_Inbox/to_sort','00_Inbox/_duplicates','00_Inbox/_migration','01_Library','01_Library/raw_human','01_Library/raw_AI')) {Need $root $sub $true}
         Need $root '01_Library/CLAUDE.md'
         foreach ($top in (Get-ChildItem -LiteralPath $root -Directory -Force)) {
@@ -42,7 +42,7 @@ try {
             if ($entry.Kind -eq 'git') {$fail.Add("Git repo inside Cowork: $rel");continue}
             if ($entry.Kind -eq 'link') {$fail.Add("Linked path requires review: $rel");continue}
             if ($entry.Kind -eq 'dir' -and @($rel -split '[/\\]').Count -gt 5) {$fail.Add("Folder deeper than 5 levels: $rel")}
-            if ($entry.Kind -eq 'file' -and $entry.Item.Name -eq 'CLAUDE.md' -and @(Get-Content -LiteralPath $entry.Path).Count -ge 200) {$fail.Add("CLAUDE.md must be under 200 lines: $rel")}
+            if ($entry.Kind -eq 'file' -and $entry.Item.Name -eq 'CLAUDE.md' -and @(Get-Content -Encoding UTF8 -LiteralPath $entry.Path).Count -ge 200) {$fail.Add("CLAUDE.md must be under 200 lines: $rel")}
             if ($entry.Item.Name.Contains(' ') -or $entry.Item.Name -match 'final|\bcopy\b|\(\d+\)') {$warn.Add("Optional rename: $rel")}
             if ($entry.Kind -eq 'dir' -and (Split-Path -Leaf (Split-Path -Parent $entry.Path)) -eq 'Projects' -and $entry.Item.Name -notmatch '^\d{4}_Q[1-4]_') {$warn.Add("Optional project naming: $rel")}
         }

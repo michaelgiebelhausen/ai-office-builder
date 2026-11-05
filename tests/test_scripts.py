@@ -6,7 +6,7 @@ from conftest import put, tree
 
 
 def manifest(tmp, rows, bundle='01_test'):
-    return put(tmp / (bundle+'.json'), json.dumps({'bundle':bundle,'description':'Approved synthetic files','moves':rows}))
+    return put(tmp / (bundle+'.json'), json.dumps({'bundle':bundle,'description':'Approved synthetic files','moves':rows,'reference_roots':list(dict.fromkeys(str(Path(r['src']).parent) for r in rows)),'dependency_review':'Synthetic fixture: no external consumers; uninspected formats reviewed'}))
 
 
 def test_scan_inventory(engine, tmp_path):
@@ -90,6 +90,7 @@ def test_real_move_undo_and_bundle_reuse(engine,tmp_path):
 def test_undo_refuses_occupied_source(engine,tmp_path):
     root=tmp_path/'home/OneDrive/Cowork';s=put(tmp_path/'home/Desktop/a','a')
     m=manifest(tmp_path,[{'src':str(s),'dst':'00_Inbox/to_sort/a'}])
+    r=engine('move_bundle',m,'--cowork',root,'--dry-run');assert r.returncode==0,r.stdout+r.stderr
     r=engine('move_bundle',m,'--cowork',root);assert r.returncode==0,r.stdout+r.stderr
     put(s,'new occupant')
     r=engine('move_bundle','--undo',root/'00_Inbox/_migration/undo_01_test.json');assert r.returncode==1

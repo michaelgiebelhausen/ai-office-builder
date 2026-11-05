@@ -37,6 +37,7 @@ def test_scenario(engine,tmp_path,scenario):
     log=root/'00_Inbox/_migration/migration_log.md'
     if scenario.get('resume'):
         earlier=manifest(tmp_path,rows[:3],'01_completed')
+        r=engine('move_bundle',earlier,'--cowork',root,'--dry-run');assert r.returncode==0,r.stdout+r.stderr
         r=engine('move_bundle',earlier,'--cowork',root);assert r.returncode==0,r.stdout+r.stderr
         before=log.read_bytes()
         undo_before=(root/'00_Inbox/_migration/undo_01_completed.json').read_bytes()

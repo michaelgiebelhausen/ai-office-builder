@@ -33,7 +33,9 @@ them. Python tracks file identity; PowerShell tracks file hashes. Both refuse
 occupied restore paths. Output wording is human-readable; JSON key names and
 exit codes are the compatibility contract (0 success, nonzero failure).
 
-Manifests use `{ "bundle": "03_client", "description": "...", "moves": [
+Manifests require `reference_roots` (explicit authorized absolute inspection roots),
+`dependency_review` (owner response about uninspected and external consumers),
+and `{ "bundle": "03_client", "description": "...", "moves": [
 { "src": "/absolute/source", "dst": "21_Client/Resources/file.txt", "note": "optional" }
 ] }`. Absolute destinations permit approved repo moves to `~/Code`. Resolve
 duplicates in the approved manifest by redirecting extras to
@@ -52,3 +54,23 @@ OneDrive is healthy before proceeding. Undo does not remove empty directories.
 Tag `v*` to run CI, package the single top-level `ai-office-builder/` skill
 folder, and attach `ai-office-builder.skill` to a GitHub Release. No test homes,
 caches, credentials, or local environment files enter the release archive.
+
+## Preview and session safeguards
+
+See [migration_safety.md](skill/ai-office-builder/references/migration_safety.md).
+Successful dry runs create an immutable MANIFEST.preview.json by default. Real
+runs require this snapshot. Use --approval NEW.json for a changed plan, with
+renewed owner approval; PowerShell uses -Approval. Source inventories and
+inspected references are rechecked. Each move logs MOVED and then VERIFIED only
+after comparing the destination inventory with the approved hashes.
+
+Use --save-session CHOICES.json to add an interview snapshot and --resume to
+reconcile the latest choices against fingerprints, actual files and verification
+logs. Both require --cowork. Native parameters are -SaveSession and -Resume.
+Legacy undo records without fingerprints are reported as blocked on resume.
+Migration and undo remain available for them; inspect them explicitly.
+
+Reference inspection is bounded and pattern-based, not a complete language or
+application parser. Unsupported formats and external consumers require owner
+review. Broken supported references cannot be waived. No automatic link repair
+is performed. Preview files must be outside moved source trees.
