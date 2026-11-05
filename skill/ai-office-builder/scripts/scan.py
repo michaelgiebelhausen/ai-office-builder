@@ -62,12 +62,19 @@ def main():
     roots_info = {}
     course_codes = Counter()
     n = 0
+    inspection_errors = []
+    def guarded_link(path):
+        try:
+            return linked(Path(path))
+        except OSError as error:
+            inspection_errors.append({'path': str(path), 'error': str(error)})
+            return True  # inaccessible metadata is held, never followed
 
     for root in a.roots:
         if n >= a.max_files:
             break
         root = os.path.abspath(os.path.expanduser(root))
-        if linked(root) or not os.path.isdir(root):
+        if guarded_link(root) or not os.path.isdir(root):
             roots_info[root] = {"error": "not a folder or not accessible"}
             continue
         rc, rs = 0, 0
@@ -77,10 +84,10 @@ def main():
                 git_repos.append(dirpath)
                 dirnames[:] = []
                 continue
-            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".") and not linked(Path(dirpath) / d)]
+            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".") and not guarded_link(Path(dirpath) / d)]
             depth = dirpath.rstrip(os.sep).count(os.sep) - base_depth
             for fn in filenames:
-                if linked(Path(dirpath) / fn) or fn.startswith(".") or fn.lower() in ("desktop.ini", "thumbs.db"):
+                if guarded_link(Path(dirpath) / fn) or fn.startswith(".") or fn.lower() in ("desktop.ini", "thumbs.db"):
                     continue
                 p = os.path.join(dirpath, fn)
                 try:
@@ -149,6 +156,7 @@ def main():
 
     out = {
         "roots": roots_info,
+        "inspection_errors": inspection_errors,
         "total_files": n,
         "truncated": n >= a.max_files,
         "extensions": ext_count.most_common(30),

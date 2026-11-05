@@ -1,10 +1,11 @@
-# v0.2.1
+# v0.2.2
 
 Includes all v0.2.0 safeguards, plus final compatibility and recovery fixes:
 
 - Detects Windows junctions using APIs available in Python 3.10 and 3.11; scans stay inside approved folders.
 - Reconciles partial migrations completed under a new bundle ID while preserving exact verification provenance and content fingerprints.
 - Reports unsafe or changed recovery trees as blocked without losing the rest of the session report.
+- Skips and reports inaccessible scan entries, and preserves case-sensitive retry provenance.
 
 The agreed folder design remains unchanged.
 

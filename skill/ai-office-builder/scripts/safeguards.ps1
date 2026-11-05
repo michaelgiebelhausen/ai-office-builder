@@ -216,7 +216,7 @@ function ReconcileSession([string]$Cowork,$State) {
             } catch {$bundles.Add(@{bundle=$path.BaseName;moved=0;original=0;blocked=1})}
         }
     }
-    $proofs=@{}
+    $proofs=[Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
     foreach ($record in $records) {
         if ($record.cowork -isnot [string] -or (FullPath $record.cowork) -ne $Cowork) {continue}
         foreach ($row in $record.moves) {

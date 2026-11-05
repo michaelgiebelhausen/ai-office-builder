@@ -54,7 +54,7 @@ try {
     }
     $extPairs=@($extensions.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 30 | ForEach-Object {,@($_.Key,$_.Value)})
     $coursePairs=@($courses.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 20 | ForEach-Object {,@($_.Key,$_.Value)})
-    $result=@{roots=$rootInfo;total_files=$n;truncated=($n -ge $MaxFiles);extensions=$extPairs;course_codes=$coursePairs;clusters=@($clusters | Sort-Object {-$_.files} | Select-Object -First 60);git_repos=@($repos.ToArray());media_folders=@($media.Keys | Where-Object {$media[$_] -ge 1e9} | ForEach-Object {@{folder=$_;gb=[math]::Round($media[$_]/1e9,2)}});name_clashes=$clashes;likely_duplicates=@($dups | Select-Object -First 200);spaces_in_names=@{count=$spaces.Count;sample=@($spaces | Select-Object -First 15)};deep_paths=@{count=$deep.Count;sample=@($deep | Select-Object -First 15)}}
+    $result=@{inspection_errors=@();roots=$rootInfo;total_files=$n;truncated=($n -ge $MaxFiles);extensions=$extPairs;course_codes=$coursePairs;clusters=@($clusters | Sort-Object {-$_.files} | Select-Object -First 60);git_repos=@($repos.ToArray());media_folders=@($media.Keys | Where-Object {$media[$_] -ge 1e9} | ForEach-Object {@{folder=$_;gb=[math]::Round($media[$_]/1e9,2)}});name_clashes=$clashes;likely_duplicates=@($dups | Select-Object -First 200);spaces_in_names=@{count=$spaces.Count;sample=@($spaces | Select-Object -First 15)};deep_paths=@{count=$deep.Count;sample=@($deep | Select-Object -First 15)}}
     WriteNewJson (FullPath $Out) $result
     Write-Output "Scanned $n files across $($Roots.Count) folder(s). $($repos.Count) git repos, $($dups.Count) duplicate groups, $($clashes.Count) repeated names. Summary written to $Out"
     exit 0
